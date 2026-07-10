@@ -1,0 +1,41 @@
+name: build-mosdns-rules
+
+on:
+  schedule:
+    - cron: '0 19 * * *'      # 每天 UTC 19:00 = 北京 03:00(早于设备 04:00 拉取)
+  workflow_dispatch:           # 也可手动触发
+
+permissions:
+  contents: write              # 需要写 release 分支
+
+concurrency:
+  group: build-rules
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 取构建脚本(默认分支)
+        uses: actions/checkout@v4
+
+      - name: 构建规则文件
+        run: |
+          bash build.sh public
+
+      - name: 发布到 release 分支(orphan,强制覆盖)
+        run: |
+          cd public
+          git init -q
+          git checkout -q -b release
+          git config user.email "actions@github.com"
+          git config user.name "github-actions"
+          git add -A
+          git commit -q -m "rules $(date -u +%FT%TZ)"
+          git push -f "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" release
+
+      - name: 刷新 jsdelivr 缓存
+        run: |
+          for f in cn-domains.txt gfw.txt ai.txt stream.txt noncn.txt cn.cidr; do
+            curl -s "https://purge.jsdelivr.net/gh/${{ github.repository }}@release/$f" >/dev/null || true
+          done
